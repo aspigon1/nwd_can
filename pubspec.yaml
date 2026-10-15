@@ -1,0 +1,19 @@
+name: nwd_can
+description: Reads live CAN-bus data (speed, RPM, fuel, voltage, doors, lights, trip computer, climate) from an NWD / Digital Star head unit's own CanService, over its published third-party SDK channel. Android only.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=2.17.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.radiodash.nwdcan
+        pluginClass: NwdCanPlugin
