@@ -30,7 +30,7 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
 
     companion object {
         private const val TAG = "NwdCan"
-        private const val PLUGIN_VER = "diag1"
+        private const val PLUGIN_VER = "diag3"
 
         // ---- the service we bind to (from CanConstant / SourceConstant) ----
         private const val SERVICE_PKG = "com.nwd.can.setting"
@@ -168,18 +168,43 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
     // ---------- outbound binder calls ----------
     private fun registerCallback(code: Int) {
         val f = feature ?: return
+        // 1) Two-way first, so a service-side exception (SDK-key / whitelist)
+        //    surfaces via readException instead of being hidden behind "false".
+        var ok = false
         val data = Parcel.obtain(); val reply = Parcel.obtain()
         try {
             data.writeInterfaceToken(FEATURE_DESC)
             data.writeStrongBinder(callback)
-            val ok = f.transact(code, data, reply, 0)
-            Log.e(TAG, "registerCallback code=$code transactOk=$ok")
-            reply.readException()
+            ok = f.transact(code, data, reply, 0)
+            try {
+                reply.readException()
+            } catch (e: Exception) {
+                Log.e(TAG, "registerCallback code=$code reply exception", e)
+                emit(mapOf("type" to "err", "where" to "reg$code", "msg" to (e.message ?: e.toString())))
+            }
+            Log.e(TAG, "registerCallback code=$code twoWayOk=$ok")
+        } catch (e: Exception) {
+            Log.e(TAG, "registerCallback code=$code threw", e)
+            emit(mapOf("type" to "err", "where" to "reg$code", "msg" to (e.message ?: e.toString())))
         } finally { reply.recycle(); data.recycle() }
+        // 2) If two-way didn't settle, retry oneway (harmless: same binder, the
+        //    service de-dups; and it fixes a reply-less-at-runtime mismatch).
+        if (!ok) {
+            val d2 = Parcel.obtain()
+            try {
+                d2.writeInterfaceToken(FEATURE_DESC)
+                d2.writeStrongBinder(callback)
+                val okOne = f.transact(code, d2, null, IBinder.FLAG_ONEWAY)
+                Log.e(TAG, "registerCallback code=$code oneWayOk=$okOne")
+            } catch (e: Exception) {
+                Log.e(TAG, "registerCallback code=$code oneway threw", e)
+            } finally { d2.recycle() }
+        }
     }
 
     private fun initSdkCfg() {
         val f = feature ?: return
+        var ok = false
         val data = Parcel.obtain(); val reply = Parcel.obtain()
         try {
             data.writeInterfaceToken(FEATURE_DESC)
@@ -187,10 +212,32 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
             data.writeString(SDK_SECRET)
             data.writeByte(SDK_PARAM_JOIN)
             data.writeString(SDK_DESC)
-            val ok = f.transact(TX_INIT_SDK_CFG, data, reply, 0)
-            Log.e(TAG, "initSdkCfg transactOk=$ok")
-            reply.readException()
+            ok = f.transact(TX_INIT_SDK_CFG, data, reply, 0)
+            try {
+                reply.readException()
+            } catch (e: Exception) {
+                Log.e(TAG, "initSdkCfg reply exception", e)
+                emit(mapOf("type" to "err", "where" to "init", "msg" to (e.message ?: e.toString())))
+            }
+            Log.e(TAG, "initSdkCfg twoWayOk=$ok")
+        } catch (e: Exception) {
+            Log.e(TAG, "initSdkCfg threw", e)
+            emit(mapOf("type" to "err", "where" to "init", "msg" to (e.message ?: e.toString())))
         } finally { reply.recycle(); data.recycle() }
+        if (!ok) {
+            val d2 = Parcel.obtain()
+            try {
+                d2.writeInterfaceToken(FEATURE_DESC)
+                d2.writeString(SDK_CHANNEL)
+                d2.writeString(SDK_SECRET)
+                d2.writeByte(SDK_PARAM_JOIN)
+                d2.writeString(SDK_DESC)
+                val okOne = f.transact(TX_INIT_SDK_CFG, d2, null, IBinder.FLAG_ONEWAY)
+                Log.e(TAG, "initSdkCfg oneWayOk=$okOne")
+            } catch (e: Exception) {
+                Log.e(TAG, "initSdkCfg oneway threw", e)
+            } finally { d2.recycle() }
+        }
     }
 
     // ---------- the callback binder the service pushes data into ----------
