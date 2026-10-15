@@ -30,6 +30,7 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
 
     companion object {
         private const val TAG = "NwdCan"
+        private const val PLUGIN_VER = "diag1"
 
         // ---- the service we bind to (from CanConstant / SourceConstant) ----
         private const val SERVICE_PKG = "com.nwd.can.setting"
@@ -151,7 +152,7 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
                     registerCallback(TX_ADD_CARINFO)
                     registerCallback(TX_ADD_CAN_CARINFO)
                     initSdkCfg()
-                    emit(mapOf("type" to "status", "connected" to true))
+                    emit(mapOf("type" to "status", "connected" to true, "v" to PLUGIN_VER))
                 } catch (e: Exception) {
                     Log.e(TAG, "register/init failed", e)
                     emit(mapOf("type" to "status", "connected" to false, "error" to (e.message ?: "register failed")))
@@ -171,7 +172,8 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
         try {
             data.writeInterfaceToken(FEATURE_DESC)
             data.writeStrongBinder(callback)
-            f.transact(code, data, reply, 0)
+            val ok = f.transact(code, data, reply, 0)
+            Log.e(TAG, "registerCallback code=$code transactOk=$ok")
             reply.readException()
         } finally { reply.recycle(); data.recycle() }
     }
@@ -185,15 +187,26 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
             data.writeString(SDK_SECRET)
             data.writeByte(SDK_PARAM_JOIN)
             data.writeString(SDK_DESC)
-            f.transact(TX_INIT_SDK_CFG, data, reply, 0)
+            val ok = f.transact(TX_INIT_SDK_CFG, data, reply, 0)
+            Log.e(TAG, "initSdkCfg transactOk=$ok")
             reply.readException()
         } finally { reply.recycle(); data.recycle() }
     }
 
     // ---------- the callback binder the service pushes data into ----------
+    private var rxCount = 0
+
     private val callback = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-            if (code in 1..0x00ffffff) data.enforceInterface(CALLBACK_DESC)
+            // DIAGNOSTIC: prove whether the service is calling us at all.
+            rxCount++
+            Log.e(TAG, "onTransact code=$code rx=$rxCount")
+            emit(mapOf("type" to "rx", "code" to code, "n" to rxCount))
+            if (code in 1..0x00ffffff) {
+                try { data.enforceInterface(CALLBACK_DESC) } catch (e: Exception) {
+                    Log.e(TAG, "enforceInterface failed", e)
+                }
+            }
             return when (code) {
                 TX_CB_CAN_DATA -> {
                     val bytes = data.createByteArray()
@@ -202,10 +215,6 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
                     true
                 }
                 TX_CB_CAR_INFO -> {
-                    // Typed CarInfo Parcelable. When a client registers the "new"
-                    // car-info callback, the service sends periodic data (speed,
-                    // RPM, coolant temp, fuel, voltage, outside temp) this way
-                    // instead of as raw bytes, so we must decode it here.
                     try {
                         val present = data.readInt()
                         if (present != 0) emit(parseTypedCarInfo(data))
