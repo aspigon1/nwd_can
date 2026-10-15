@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.radiodash.nwdcan">
+    <!-- Android 11+ needs an explicit query to see/bind another app's service by package -->
+    <queries>
+        <package android:name="com.nwd.can.setting" />
+    </queries>
+</manifest>
