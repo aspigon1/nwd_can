@@ -201,8 +201,21 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
                     if (bytes != null) handleFrame(bytes)
                     true
                 }
-                TX_CB_CAR_INFO, TX_CB_AMP, TX_CB_TPMS -> {
-                    // typed Parcelables – we rely on the raw-byte path instead
+                TX_CB_CAR_INFO -> {
+                    // Typed CarInfo Parcelable. When a client registers the "new"
+                    // car-info callback, the service sends periodic data (speed,
+                    // RPM, coolant temp, fuel, voltage, outside temp) this way
+                    // instead of as raw bytes, so we must decode it here.
+                    try {
+                        val present = data.readInt()
+                        if (present != 0) emit(parseTypedCarInfo(data))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "carinfo parcel decode", e)
+                    }
+                    reply?.writeNoException()
+                    true
+                }
+                TX_CB_AMP, TX_CB_TPMS -> {
                     reply?.writeNoException()
                     true
                 }
@@ -370,5 +383,57 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
             "frontRightCenterLvl" to b[9].toInt(),
             "frontRightLvl" to b[10].toInt()
         )
+    }
+
+    /**
+     * Decode the typed CarInfo Parcelable. Reads every field in the EXACT order
+     * of CarInfo.writeToParcel from the unit's own SDK, keeping the useful ones.
+     * Reading stops after the outside/water temperature strings — the fields we
+     * need are all before that point.
+     */
+    private fun parseTypedCarInfo(p: Parcel): Map<String, Any?> {
+        val m = HashMap<String, Any?>()
+        m["type"] = "carInfo"
+        p.readInt(); p.readInt(); p.readInt(); p.readInt()        // mDrivingMile, 1,2,3
+        p.readInt(); p.readInt(); p.readInt()                     // mCanDriverMileage,2,3
+        p.readFloat(); p.readFloat(); p.readFloat()               // mElecPow1,2,3
+        p.readInt(); p.readInt(); p.readInt()                     // mElecCanDriver1,2,3
+        p.readFloat(); p.readFloat()                              // mTRIPAMile, mTRIPBMile
+        m["instantSpeed"] = p.readInt()                           // mInstantanSpeed (km/h)
+        p.readInt(); p.readInt(); p.readInt()                     // mEquallySpeed,2,3
+        p.readByte()                                              // mSpeedUnit
+        m["driveTime1"] = p.readInt()                             // mDriverTime1
+        p.readInt(); p.readInt()                                  // mDriverTime2,3
+        m["engineSpeed"] = p.readInt()                            // mEngineSpeed (RPM)
+        m["coolantTemp"] = p.readFloat()                          // mCoolantTemp (deg C)
+        p.readFloat()                                             // mInstantanOil
+        p.readFloat(); p.readFloat(); p.readFloat()               // mAverageOil,2,3
+        p.readByte()                                              // mOilConsumptionUnit
+        m["fuelLevel"] = p.readFloat()                            // mOilSurplus (%)
+        p.readByte()                                              // mOilLowWarning
+        m["batteryVoltage"] = p.readFloat()                       // mBatteryVoltage (V)
+        p.readFloat()                                             // mElectric
+        p.readByte()                                              // mBatteryVoltageStatus
+        p.readInt()                                               // mBatteryCapacity
+        p.readByte()                                              // mSafetyBelt
+        p.readByte()                                              // mFrontRightSafetyBelt
+        m["handbrake"] = p.readByte().toInt()                     // mHandbrake
+        p.readByte()                                              // mCleaningLiquid
+        p.readInt(); p.readInt(); p.readInt(); p.readInt(); p.readInt() // door locks FL,FR,RL,RR,boot
+        p.readByte(); p.readByte(); p.readByte(); p.readByte()    // highbeam, dipped, beforeFog, afterFog
+        m["rightTurn"] = p.readByte().toInt()                     // mRightTurnSignal
+        m["leftTurn"] = p.readByte().toInt()                      // mLeftTurnSignal
+        p.readByte(); p.readByte(); p.readByte(); p.readByte()    // hazard, big, small, widthLight
+        p.readByte(); p.readByte(); p.readByte()                  // backLight, brakeLight, cautionLight
+        p.readByte()                                              // mComfurtableUnit
+        p.readInt()                                               // mComfurtableValue
+        p.readByte(); p.readByte(); p.readByte()                  // comfMax, currentMachineOil, mileageUnit
+        p.readByte(); p.readInt(); p.readByte(); p.readInt(); p.readByte() // machineOilCheck sign/day/daySign/mile/mileSign
+        p.readByte(); p.readInt(); p.readByte(); p.readInt(); p.readByte() // tireCheck sign/day/daySign/mile/mileSign
+        p.readByte(); p.readByte(); p.readInt(); p.readByte(); p.readInt(); p.readByte() // carCheck sign/month/day/daySign/mile/mileSign
+        p.readByte()                                              // mTempUnit
+        m["outsideTemp"] = p.readString()                        // mstrOuttemp (e.g. "25C")
+        m["waterTempStr"] = p.readString()                       // mstrWaterTemp
+        return m
     }
 }
