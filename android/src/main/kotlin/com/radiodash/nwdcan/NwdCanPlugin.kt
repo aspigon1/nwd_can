@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Binder
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
@@ -70,6 +71,11 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
     private var sink: EventChannel.EventSink? = null
     private val main = Handler(Looper.getMainLooper())
 
+    // All binder IPC runs on this background thread so the UI thread never
+    // blocks on a cross-process call to the CAN service.
+    private var ioThread: HandlerThread? = null
+    private var io: Handler? = null
+
     private var feature: IBinder? = null
     private var bound = false
 
@@ -105,6 +111,10 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
     private fun start() {
         val c = ctx ?: return
         if (bound) return
+        if (ioThread == null) {
+            ioThread = HandlerThread("nwd-can-io").apply { start() }
+            io = Handler(ioThread!!.looper)
+        }
         val intent = Intent(ACTION_SERVICE).apply {
             setPackage(SERVICE_PKG)
             component = ComponentName(SERVICE_PKG, SERVICE_CLS)
@@ -123,23 +133,29 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
         val c = ctx
         if (bound && c != null) { try { c.unbindService(conn) } catch (_: Exception) {} }
         bound = false; feature = null
+        io = null
+        ioThread?.quitSafely()
+        ioThread = null
     }
 
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             feature = binder
             Log.d(TAG, "onServiceConnected $binder")
-            try {
-                registerCallback(TX_ADD_AIR)
-                registerCallback(TX_ADD_DOOR)
-                registerCallback(TX_ADD_RADAR)
-                registerCallback(TX_ADD_CARINFO)
-                registerCallback(TX_ADD_CAN_CARINFO)
-                initSdkCfg()
-                emit(mapOf("type" to "status", "connected" to true))
-            } catch (e: Exception) {
-                Log.e(TAG, "register/init failed", e)
-                emit(mapOf("type" to "status", "connected" to false, "error" to (e.message ?: "register failed")))
+            // Run registration + init OFF the UI thread (this callback is on main).
+            (io ?: main).post {
+                try {
+                    registerCallback(TX_ADD_AIR)
+                    registerCallback(TX_ADD_DOOR)
+                    registerCallback(TX_ADD_RADAR)
+                    registerCallback(TX_ADD_CARINFO)
+                    registerCallback(TX_ADD_CAN_CARINFO)
+                    initSdkCfg()
+                    emit(mapOf("type" to "status", "connected" to true))
+                } catch (e: Exception) {
+                    Log.e(TAG, "register/init failed", e)
+                    emit(mapOf("type" to "status", "connected" to false, "error" to (e.message ?: "register failed")))
+                }
             }
         }
         override fun onServiceDisconnected(name: ComponentName?) {
