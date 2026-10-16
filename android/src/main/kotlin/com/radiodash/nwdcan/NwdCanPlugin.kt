@@ -30,7 +30,7 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
 
     companion object {
         private const val TAG = "NwdCan"
-        private const val PLUGIN_VER = "diag3"
+        private const val PLUGIN_VER = "rawexp"
 
         // ---- the service we bind to (from CanConstant / SourceConstant) ----
         private const val SERVICE_PKG = "com.nwd.can.setting"
@@ -48,6 +48,7 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
         private const val TX_ADD_RADAR = 15
         private const val TX_ADD_CARINFO = 17
         private const val TX_ADD_CAN_CARINFO = 27
+        private const val TX_ADD_CAN_DATA = 23  // raw CAN data stream (experiment)
 
         // ---- transaction codes the service calls back on (our Binder) ----
         private const val TX_CB_CAN_DATA = 1   // onDistributeCanData(byte[])
@@ -151,6 +152,7 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
                     registerCallback(TX_ADD_RADAR)
                     registerCallback(TX_ADD_CARINFO)
                     registerCallback(TX_ADD_CAN_CARINFO)
+                    registerCallback(TX_ADD_CAN_DATA)  // raw CAN (experiment)
                     initSdkCfg()
                     emit(mapOf("type" to "status", "connected" to true, "v" to PLUGIN_VER))
                 } catch (e: Exception) {
@@ -300,8 +302,11 @@ class NwdCanPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
     private fun handleFrame(b: ByteArray) {
         if (b.isEmpty()) return
         if (u(b, 0) != MARKER) {
-            // not the normalised remote protocol – forward raw for mapping
-            emit(mapOf("type" to "raw", "hex" to b.joinToString("") { "%02x".format(it.toInt() and 0xff) }))
+            // Raw (non-normalised) CAN frame — the experiment. Log it so we can
+            // hunt for fuel/RPM in the raw bus.
+            val hex = b.joinToString(" ") { "%02x".format(it.toInt() and 0xff) }
+            Log.e("NwdCanRaw", "len=${b.size} $hex")
+            emit(mapOf("type" to "raw", "hex" to hex, "len" to b.size))
             return
         }
         try {
