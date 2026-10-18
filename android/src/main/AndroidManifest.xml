@@ -4,4 +4,14 @@
     <queries>
         <package android:name="com.nwd.can.setting" />
     </queries>
+    <!-- Bluetooth permissions for the OBD-II BLE adapter. Declared here in the
+         plugin manifest so Gradle's manifest merger folds them into the final
+         APK on every build path (including FlutterFlow's cloud build), which the
+         app manifest alone does not get. BLUETOOTH + BLUETOOTH_ADMIN cover
+         Android <= 11 (required for BLE scanning there); BLUETOOTH_SCAN +
+         BLUETOOTH_CONNECT cover Android 12+. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 </manifest>
