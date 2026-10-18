@@ -14,4 +14,20 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Media "now playing" from other apps (radio / BT music) via the
+         nowplaying package's NotificationListenerService. Declared here so the
+         manifest merger folds the service into the final APK on every build
+         path (incl. FlutterFlow cloud). The user still grants Notification
+         Access once in Settings; this only registers the service. -->
+    <application>
+        <service
+            android:name="com.gomes.nowplaying.NowPlayingListenerService"
+            android:label="radio dashboard"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
 </manifest>
